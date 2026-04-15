@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PricingMode {
+  FLAT_HOURLY
+  FIXED_DAILY
+}
+
+enum AdminRole {
+  OWNER
+  OPERATOR
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  CAR
+  BUS
+  TRUCK
+}
+
+enum TicketStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy   User   @relation(fields: [createdById], references: [id])
+  createdById String
+
+  @@index([name])
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  posts         Post[]
+  locationAdmins  LocationAdmin[]
+  parkingTickets  ParkingTicket[]
+  licensePlates   LicensePlateHistory[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@map("verification")
+}
+
+model ParkingLocation {
+  id          String      @id @default(cuid())
+  name        String
+  slug        String      @unique
+  address     String?
+  latitude    Float?
+  longitude   Float?
+  description String?
+  pricingMode PricingMode @default(FLAT_HOURLY)
+  balance     Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  admins          LocationAdmin[]
+  pricingTiers    PricingTier[]
+  vehicleTypeRules VehicleTypeRule[]
+  tickets         ParkingTicket[]
+
+  @@map("parking_location")
+}
+
+model LocationAdmin {
+  id         String   @id @default(cuid())
+  userId     String
+  locationId String
+  role       AdminRole @default(OPERATOR)
+  createdAt  DateTime  @default(now())
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location ParkingLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@map("location_admin")
+}
+
+model PricingTier {
+  id                  String      @id @default(cuid())
+  locationId          String
+  vehicleType         VehicleType
+  firstHourRate       Int
+  additionalHourRate  Int
+  dailyRate           Int
+  maxDailyRate        Int?
+  gracePeriodMinutes  Int         @default(15)
+  isActive            Boolean     @default(true)
+
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, vehicleType])
+  @@map("pricing_tier")
+}
+
+model VehicleTypeRule {
+  id          String      @id @default(cuid())
+  locationId  String
+  vehicleType VehicleType
+  name        String
+  pattern     String
+  priority    Int         @default(0)
+  isActive    Boolean     @default(true)
+
+  location ParkingLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_type_rule")
+}
+
+model ParkingTicket {
+  id              String       @id @default(cuid())
+  locationId      String
+  userId          String?
+  licensePlate    String
+  licensePlateRaw String
+  vehicleType     VehicleType
+  durationMinutes Int
+  totalPrice      Int
+  status          TicketStatus @default(PENDING)
+  approvalCode    String?
+  timeoutCode     String?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  location ParkingLocation @relation(fields: [locationId], references: [id])
+  user     User?           @relation(fields: [userId], references: [id])
+  payment  Payment?
+
+  @@index([licensePlate])
+  @@index([status])
+  @@index([locationId, createdAt])
+  @@map("parking_ticket")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  ticketId          String        @unique
+  amount            Int
+  qrisPayload       String?
+  qrisExpiry        DateTime?
+  status            PaymentStatus @default(PENDING)
+  webhookPayload    String?
+  webhookSignature  String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  ticket ParkingTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("payment")
+}
+
+model LicensePlateHistory {
+  id              String      @id @default(cuid())
+  userId          String
+  licensePlate    String
+  licensePlateRaw String
+  vehicleType     VehicleType
+  label           String?
+  useCount        Int         @default(1)
+  lastUsedAt      DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, licensePlate])
+  @@map("license_plate_history")
+}
