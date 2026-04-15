@@ -38,7 +38,7 @@ Self-service parking ticketing and payment PWA using QRIS (Indonesian QR payment
 
 ```bash
 # Clone the repo
-git clone <repo-url> && cd parkir-nyalira
+git clone https://github.com/kamilersz/Parkir-Nyalira && cd Parkir-Nyalira
 
 # Install dependencies
 bun install
